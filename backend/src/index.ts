@@ -43,8 +43,8 @@ app.use('/candidates', candidateRoutes);
 // Route for file uploads
 app.post('/upload', uploadFile);
 
-// Route to get candidates by position
-app.use('/position', positionRoutes);
+// Route to get candidates by position (plural per spec)
+app.use('/positions', positionRoutes);
 
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);

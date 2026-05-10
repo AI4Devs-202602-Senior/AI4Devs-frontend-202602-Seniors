@@ -4,6 +4,6 @@ import { getCandidatesByPosition, getInterviewFlowByPosition } from '../presenta
 const router = require('express').Router();
 
 router.get('/:id/candidates', getCandidatesByPosition);
-router.get('/:id/interviewflow', getInterviewFlowByPosition);
+router.get('/:id/interviewFlow', getInterviewFlowByPosition);
 
 export default router;
