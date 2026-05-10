@@ -1,0 +1,83 @@
+# openspec/config.yaml
+schema: spec-driven
+
+context: |
+  # Project Context — LTI Talent Tracking System
+
+  ## Tech Stack
+  - Runtime: Node.js (LTS)
+  - Package Manager: npm
+  - Frontend: React 18 + TypeScript, Vite (migrated from CRA), React-Bootstrap 5
+  - Backend: Express 4 + TypeScript, Prisma 5
+  - Database: PostgreSQL 14+ (Docker)
+  - Testing: Jest + ts-jest (backend), Cypress (frontend E2E), React Testing Library (frontend unit)
+  - SDD: OpenSpec
+
+  ## API Standards
+  - RESTful API, JSON responses
+  - Error response shape: { error, code, message }
+  - Endpoints versioned under /api/v1/ when newly added; existing endpoints preserved as-is unless a proposal renames them
+  - Authentication via JWT in the Authorization header
+
+  ## Coding Conventions
+  - ES2022+ / TypeScript
+  - snake_case for database columns
+  - camelCase for JavaScript/TypeScript variables and functions
+  - Descriptive names for functions and variables
+  - Tests for all new features (minimum 80% coverage)
+  - JSDoc/TSDoc on all public APIs (services, hooks, controllers, repositories)
+
+  ## Project Structure
+  - frontend/src/: React app (components, pages, hooks, services, types)
+  - backend/src/: Layered DDD/Hexagonal (application, domain, infrastructure, presentation, routes)
+  - openspec/: Source of truth for specs and proposals
+  - openspec/specs/: Current system specifications
+  - openspec/changes/: Proposed changes / features in development
+  - docs/: Reference assets and reports
+
+  ## Development Workflow
+  - Create proposals before implementation (/opsx:propose)
+  - Apply with /opsx:apply, sync specs with /opsx:sync, archive with /opsx:archive
+  - Keep specs aligned with shipped behavior
+  - All changes pass review; tests must pass before merge
+
+  ## Testing Conventions
+  - Backend: Jest unit + integration tests
+  - Frontend: Cypress E2E for user flows; React Testing Library for component units
+  - Coverage: > 80%
+  - Each new feature defines a layered testing strategy
+
+rules:
+  proposal:
+    - Include a clear problem statement
+    - Specify scope and timeline
+    - Outline benefits and trade-offs
+    - Declare test types: Jest backend unit/integration; Cypress E2E for the frontend
+
+  design:
+    - Document all API endpoints with examples
+    - Include database schema changes (Prisma migrations)
+    - Specify new dependencies needed
+    - Outline implementation steps
+    - Document the planned location of tests
+    - Specify required mocks, fixtures, and test data
+    - Define how the contract between React frontend and Express backend is validated (Zod schemas, API tests)
+
+  spec:
+    - Use clear, declarative language
+    - Document all features and behaviors
+    - Include examples where relevant
+    - Keep version history with dates
+    - Use Given/When/Then format
+    - Reference existing patterns before inventing new ones
+    - Separate backend coverage (Jest) and frontend E2E (Cypress)
+
+  tasks:
+    - Break down into atomic, testable units
+    - Include estimated effort for each task
+    - Mark dependencies between tasks
+    - Include QA and documentation tasks
+    - Each new feature must include unit and integration tests
+    - Define test cases in design.md before implementation starts
+    - Include explicit Jest backend unit test tasks
+    - Include explicit Cypress frontend E2E test tasks
