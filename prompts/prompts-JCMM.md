@@ -4,6 +4,26 @@
 
 ---
 
+## 0. Mandatory Gates (DO NOT SKIP)
+
+These gates have failed silently in previous executions. Each one MUST be verified before the run is declared complete. If a gate fails, fix it before moving on — do not paper over with stub text.
+
+| # | Gate | Hard verification command | Pass criterion |
+|---|---|---|---|
+| G1 | OpenSpec scaffold | `test -d openspec/specs && test -d openspec/changes` | Both directories exist (created by `openspec init --tools claude --force`) |
+| G2 | OpenSpec lifecycle ran | `openspec list --specs \| grep position-kanban` and `ls openspec/changes/archive/ \| grep position-kanban` | Spec is present **and** the change has been archived (propose → validate → archive). Do NOT claim completion by writing prose that says "OpenSpec is scaffolded for future use" — actually run `openspec new change`, `openspec validate <name>`, and `openspec archive <name> --yes`. |
+| G3 | Cypress runnable | `cd frontend && npx cypress run --spec cypress/e2e/position-kanban.cy.ts` (with backend stubbed) does NOT fail with `Your project does not contain a default supportFile` | Files `frontend/cypress/support/e2e.ts` AND `frontend/cypress/support/commands.ts` exist. `cypress.config.ts` either points at them or sets `supportFile: false`. |
+| G4 | Seed produces non-zero scores | `docker compose up -d && (cd backend && npm run ts-node seed-test-data.ts)` followed by `curl localhost:3010/positions/1/candidates \| jq '.[].averageScore'` | At least one candidate has `averageScore > 0`. Seeds MUST insert `Interview` rows tied to each `Application` because the backend computes `mean(interviews.score)` and returns 0 for empty interview collections. |
+| G5 | Pixel-perfect kanban | Manual diff against `docs/position.avif` | Title is `<Position Name> Position` (the literal word " Position" appended). Inline `<ChevronLeft>` button precedes the title. Each candidate card shows the candidate name and **N filled green dots out of 5** for `averageScore` — NOT a numeric `4/5` badge, and NOT an `App ID:` sublabel. Page background is a soft gray; column tiles are a slightly lighter gray with rounded corners. Card width is fixed (~16rem on desktop). |
+| G6 | TypeScript clean | `cd frontend && npx tsc --noEmit` | Exit code 0. |
+| G7 | Symlinks resolve | `for d in .cursor .windsurf .antigravity .github/copilot; do find "$d" -maxdepth 3 -type l -exec readlink -f {} \;; done` | Every symlink points back into `.claude/`. |
+| G8 | Kanban DnD works cross-column with cards present | Manual: drag a card from a column with ≥ 2 candidates onto a column that already has ≥ 1 candidate; the API call to `PUT /candidates/:id/stage` fires and the card moves. | Drop targets MUST resolve when the drop lands on a sibling candidate, not only on the column itself (dnd-kit's collision detection often reports `over.id` as another candidate). Use `closestCenter` and an `over.id`-aware handler that accepts both `column-{stepId}` and `candidate-{appId}-{stepId}`. |
+| G9 | `averageScore > 0` for at least one candidate after seed **or** backfill | `curl localhost:3010/positions/<id>/candidates \| jq '[.[].averageScore] \| max'` returns a value > 0 | Seeding on a clean DB is not enough — if Applications already exist without Interviews (e.g., from an earlier partial run), running the seed again throws unique-constraint errors and the kanban still shows zero. Provide an **idempotent backfill** script (`backend/scripts/add-interviews.ts`) that inserts Interview rows only for Applications with `interviews.length === 0`. |
+| G10 | Every `.claude/commands/*.md` is wired to a real agent or CLI tool | `agents=$(ls .claude/agents/ \| sed 's/\.md$//' \| tr '\n' '\|' \| sed 's/\|$//'); find .claude/commands -name '*.md' -type f \| while read f; do grep -qE "($agents)\|openspec \|semgrep " "$f" \|\| echo "ORPHAN: $f"; done` returns nothing | Commands cannot reference removed/renamed agents or skills, and the canonical OpenSpec `opsx/*` commands (which drive the `openspec` CLI directly) are allowed. Also: do NOT keep both flat `opsx-*.md` and `opsx/*.md` — the OpenSpec install owns the `opsx/` namespace, the flat files duplicate it. |
+| G11 | At least one slash command was actually invoked during the run | The run log shows the orchestrator dispatched via at least one `/<ns>:<name>` slash command (e.g., `/build:position-kanban`, `/opsx:propose`, `/scan:sast`), not only via direct Bash CLI calls. | Slash commands are the documented public API of the toolkit. If a run produces every artifact without ever invoking one, the commands are dead code and the gap between "stated workflow" and "actual workflow" widens silently. Future runs MUST drive at least one phase through a slash command and record it in `docs/report.md`. |
+
+A "completed" run that does not pass every gate above is incomplete. Reopen the failing gate, fix it, then proceed.
+
 ## 1. Role & Operating Principles
 
 You are a **senior agentic-IDE engineer**. Operate under these principles:
@@ -12,8 +32,9 @@ You are a **senior agentic-IDE engineer**. Operate under these principles:
 - **Atomicity.** Each agent, skill, and command owns a single concern. Small files, narrow tools, sharp triggers.
 - **Parallelize.** When two steps are independent, dispatch them as parallel sub-agent calls.
 - **Token discipline.** Load only what the current step needs. Prefer reading specific files at specific line ranges over wholesale exploration.
-- **Pixel-perfect reuse.** When implementing UI, reuse the project's existing visual components before introducing new ones.
+- **Pixel-perfect reuse.** When implementing UI, reuse the project's existing visual components before introducing new ones, but match the design reference (`docs/position.avif`) literally — colors, spacing, card width, score visualization.
 - **Trust but verify.** Sub-agent summaries describe intent, not result; check the diff and run the verification gate before proceeding.
+- **Run, don't narrate.** Run the OpenSpec workflow invoking the CLI. Writing "OpenSpec is scaffolded for future feature proposals" without running `openspec new change`/`openspec validate`/`openspec archive` is a failed run.
 
 ---
 
@@ -24,7 +45,7 @@ Set up an IDE-agnostic agentic toolkit (8 expert agents, atomic skills, atomic c
 - Install and configure **OpenSpec**; write `openspec/config.yaml`.
 - Generate **`AGENTS.md`** (codebase analysis) and **`CLAUDE.md`** (relative pointer to `AGENTS.md`).
 - Apply **DDD + Hexagonal** with selectively used patterns, JSDoc/TSDoc on public APIs, Core Web Vitals, lazy loading, **Vite migration**, OWASP/SAST, **WCAG 2.2 AA**, mobile-first responsiveness.
-- Drive the OpenSpec workflow `/opsx:propose → /opsx:apply → /opsx:sync → /opsx:archive` for the Position kanban spec.
+- Drive the OpenSpec workflow `/opsx:propose → /opsx:apply → /opsx:archive` for the Position kanban spec (`/opsx:sync` is **not** installed by OpenSpec 1.3.x — the install ships `propose`, `apply`, `archive`, `explore`; sync semantics happen inside `archive`).
 - Produce **`PR.md`** and **`docs/report.md`** capturing the run.
 
 ---
@@ -81,6 +102,7 @@ Symlink targets to create (relative to each symlink's directory):
 | `.antigravity/agents/` | `../.claude/agents/` |
 | `.antigravity/commands/` | `../.claude/commands/` |
 | `.github/copilot/agents/` | `../../.claude/agents/` |
+| `.github/copilot/commands/` | `../../.claude/commands/` |
 
 Provide an idempotent script `scripts/link-ai-tooling.sh` that:
 
@@ -135,7 +157,7 @@ allowed-tools: [Read, Edit, Bash]
 ---
 ```
 
-Skill catalog (create one file per row):
+Skill catalog (create one file per row). **Note**: `openspec init --tools claude --force` will additionally drop its own `openspec-apply-change`, `openspec-archive-change`, and `openspec-explore` skills into `.claude/skills/`. Treat those as part of the expected output; do not delete them.
 
 | Slug | Purpose |
 |---|---|
@@ -152,7 +174,7 @@ Skill catalog (create one file per row):
 | `dompurify-zod-guard` | Add DOMPurify wherever HTML is rendered; add Zod schemas at form/API boundaries |
 | `dnd-kanban` | Implement drag-and-drop with `@dnd-kit/core` (a11y- and mobile-friendly) over React-Bootstrap cards |
 | `jsdoc-public-api` | Add JSDoc/TSDoc to every exported function/class/hook |
-| `cypress-e2e-bootstrap` | Install Cypress, configure for `http://localhost:3000`, add base spec for the kanban happy path |
+| `cypress-e2e-bootstrap` | Install Cypress, configure `baseUrl: http://localhost:3000`, expose `env.positionId` (default to the seeded id) overridable via `CYPRESS_positionId=N` or `--env positionId=N`, add the default supportFile pair (`cypress/support/{e2e,commands}.ts`), and a base spec that visits `/positions/${Cypress.env('positionId')}` directly — never via the mock list page |
 | `jest-backend-bootstrap` | Ensure Jest+ts-jest config, add coverage threshold > 80 %, write controller/service tests |
 | `prisma-endpoint` | Add a missing Express+Prisma endpoint under DDD/Hexagonal with repository + service + controller + Jest |
 | `chrome-devtools-mcp-setup` | Install per https://github.com/ChromeDevTools/chrome-devtools-mcp/#mcp-client-configuration (CLI, MCP only) |
@@ -175,18 +197,18 @@ argument-hint: "<args>"
 
 followed by a short orchestration body that names the agents/skills it dispatches.
 
-| Command | Dispatches | Notes |
-|---|---|---|
-| `/opsx:propose` | `openspec-analyst` + `openspec-propose` | Args: short title |
-| `/opsx:apply` | `openspec-analyst` + `openspec-apply` | Args: change id |
-| `/opsx:sync` | `openspec-analyst` + parallel: `frontend-developer`, `sql-developer`, `tester` | |
-| `/opsx:archive` | `openspec-analyst` + `openspec-archive` | Args: change id |
-| `/audit:web-vitals` | `frontend-developer` + `web-vitals-audit` | |
-| `/audit:a11y` | `frontend-developer` + `a11y-audit` | |
-| `/audit:owasp` | `owasp-security` + `owasp-checklist` | |
-| `/scan:sast` | `sast-pentester` + `sast-scan` | |
-| `/setup:chrome-devtools-mcp` | `devops` + `chrome-devtools-mcp-setup` | |
-| `/build:position-kanban` | parallel: `graphic-designer`, `frontend-developer`, `sql-developer`; serial: `tester`, `owasp-security`, `sast-pentester` | Drives §13 end-to-end |
+| Command | File | Dispatches | Notes |
+|---|---|---|---|
+| `/opsx:propose` | `opsx/propose.md` | OpenSpec CLI directly | Installed by `openspec init --tools claude` — do NOT duplicate as a flat `opsx-propose.md` |
+| `/opsx:apply` | `opsx/apply.md` | OpenSpec CLI directly | Installed by `openspec init --tools claude` |
+| `/opsx:archive` | `opsx/archive.md` | OpenSpec CLI directly | Installed by `openspec init --tools claude` |
+| `/opsx:explore` | `opsx/explore.md` | OpenSpec CLI directly | Installed by `openspec init --tools claude` |
+| `/audit:web-vitals` | `audit-web-vitals.md` | `frontend-developer` + `web-vitals-audit` | |
+| `/audit:a11y` | `audit-a11y.md` | `frontend-developer` + `a11y-audit` | |
+| `/audit:owasp` | `audit-owasp.md` | `owasp-security` + `owasp-checklist` | |
+| `/scan:sast` | `scan-sast.md` | `sast-pentester` + `sast-scan` | |
+| `/setup:chrome-devtools-mcp` | `setup-chrome-devtools-mcp.md` | `devops` + `chrome-devtools-mcp-setup` | |
+| `/build:position-kanban` | `build-position-kanban.md` | parallel: `graphic-designer`, `frontend-developer`, `sql-developer`; serial: `tester`, `owasp-security`, `sast-pentester` | Drives §13 end-to-end |
 
 ---
 
@@ -194,7 +216,7 @@ followed by a short orchestration body that names the agents/skills it dispatche
 
 | # | Phase | Owner | Helpers | Skills | Output | Gate |
 |---|---|---|---|---|---|---|
-| 1 | OpenSpec install + `config.yaml` | `openspec-analyst` | `devops` | `openspec-init` | `openspec/`, `openspec/config.yaml` (per §10) | `openspec view` runs |
+| 1 | OpenSpec install + `config.yaml` | `openspec-analyst` | `devops` | `openspec-init` | `openspec/`, `openspec/config.yaml` (per §10) | `test -d openspec/specs && test -d openspec/changes` — see Gate G1 |
 | 2 | Codebase analysis → `AGENTS.md` | `openspec-analyst` | `frontend-developer`, `sql-developer` | — | `AGENTS.md` (per §11) | Sections complete |
 | 3 | `CLAUDE.md` pointer | `openspec-analyst` | — | — | `CLAUDE.md` containing `./AGENTS.md` | File exists, single line |
 | 4 | DDD/Hexagonal application | `frontend-developer`, `sql-developer` | `openspec-analyst` | — | Refactor where required by §13 | YAGNI check |
@@ -208,7 +230,7 @@ followed by a short orchestration body that names the agents/skills it dispatche
 | 12 | Navigation: hierarchy, breadcrumbs, skip-links `[parallel]` | `graphic-designer` | `frontend-developer` | — | Skip link + breadcrumbs in long flows | Manual + axe |
 | 13 | Visual feedback (hover/focus, skeletons, optimistic UI, toasts) | `graphic-designer` | `frontend-developer` | — | Hover/focus, skeleton, optimistic stage update | Visible |
 | 14 | Chrome DevTools MCP install | `devops` | — | `chrome-devtools-mcp-setup` | MCP entry registered | `claude mcp list` shows it |
-| 15 | OpenSpec flow for Position kanban: `/opsx:propose → /opsx:apply → /opsx:sync → /opsx:archive` | `openspec-analyst` | parallel: `graphic-designer`, `frontend-developer`, `sql-developer`, `tester` | `openspec-propose`, `openspec-apply`, `openspec-sync`, `openspec-archive`, `dnd-kanban`, `cypress-e2e-bootstrap`, `jest-backend-bootstrap`, `prisma-endpoint` (conditional) | Feature shipped per §13 spec | Cypress green; Jest ≥ 80 % |
+| 15 | OpenSpec flow for Position kanban: **`openspec new change add-position-kanban` → fill proposal/design/tasks/specs → `openspec validate add-position-kanban` → `openspec archive add-position-kanban --yes`** | `openspec-analyst` | parallel: `graphic-designer`, `frontend-developer`, `sql-developer`, `tester` | `openspec-propose`, `openspec-apply`, `openspec-sync`, `openspec-archive`, `dnd-kanban`, `cypress-e2e-bootstrap`, `jest-backend-bootstrap`, `prisma-endpoint` (conditional) | Feature shipped per §13 spec | Gate G2 (spec listed + change archived); Cypress green; Jest ≥ 80 % |
 | 16 | `docs/report.md` from `openspec view` | `openspec-analyst` | — | `report-md-writer` | `docs/report.md` | File exists |
 
 After phase 16: run `pr-md-writer` to render `PR.md` (see §17).
@@ -259,7 +281,7 @@ context: |
 
   ## Development Workflow
   - Create proposals before implementation (/opsx:propose)
-  - Apply with /opsx:apply, sync specs with /opsx:sync, archive with /opsx:archive
+  - Apply with /opsx:apply; archive (which updates the active specs) with /opsx:archive
   - Keep specs aligned with shipped behavior
   - All changes pass review; tests must pass before merge
 
@@ -402,16 +424,29 @@ Response: { "message": "Candidate stage updated successfully", "data": { "id": 1
 - Route: `GET /positions/:id` → lazy-loaded page `PositionPage`.
 - Wire the **Ver proceso** button in `Positions.tsx` to `useNavigate()(`/positions/${id}`)`.
 - Service module `frontend/src/services/positionService.ts` exporting typed `getInterviewFlow`, `getCandidates`, `updateCandidateStage`.
-- Hook `usePositionBoard(id)` that fetches both endpoints in parallel, normalizes candidates by `currentInterviewStep`, exposes an optimistic `moveCandidate(applicationId, toStepId)` that calls `updateCandidateStage` and rolls back on error.
-- Drag-and-drop via `@dnd-kit/core` (keyboard- and screen-reader-friendly).
-- Components: `PositionPage`, `KanbanBoard`, `KanbanColumn`, `CandidateCard`, `BackButton`, `LoadingSkeleton`, `ErrorState`, `Toast`. Reuse `react-bootstrap` `Card`, `Badge`, `Button`, and `react-bootstrap-icons` for the back arrow.
+- Hook `usePositionBoard(id)` that fetches both endpoints in parallel, normalizes candidates by `currentInterviewStep` (number; the foreign-key id, **not** the step name), exposes an optimistic `moveCandidate(applicationId, toStepId)` that calls `updateCandidateStage` and rolls back on error.
+- Drag-and-drop via `@dnd-kit/core` + `@dnd-kit/sortable` (keyboard- and screen-reader-friendly). The `DndContext` MUST set `collisionDetection={closestCenter}` and use explicit sensors: a `PointerSensor` with `activationConstraint: { distance: 4 }` (so clicks don't false-trigger drags) and a `KeyboardSensor` with `coordinateGetter: sortableKeyboardCoordinates`. The `onDragEnd` handler MUST resolve the target step id from BOTH possible `over.id` shapes — `column-{stepId}` (empty-column drop) AND `candidate-{appId}-{stepId}` (drop on a sibling card; this is the common case when the target column already has cards). Failing to handle the second case silently discards drops and looks to the user like drag-and-drop is broken. Early-return when `toStepId === fromStepId`. Give `.kanban-column__body` `flex: 1; min-height: ~6rem` so empty columns still have a hit area.
+- Components: `PositionPage`, `KanbanBoard`, `KanbanColumn`, `CandidateCard`, `LoadingSkeleton`, `ErrorState`, `Toast`. The back-arrow is rendered inline inside `PositionPage` using `<ChevronLeft>` from `react-bootstrap-icons` — do NOT add a separate `BackButton` Bootstrap `Button` component.
 - Mobile breakpoint: stack columns vertically, full-width cards, sticky column header.
 - Optimistic UI on stage move; revert with toast on failure.
 - LCP candidate is the first kanban column header — apply `fetchpriority="high"` only if it contains an image; otherwise focus on critical CSS.
 
+**Pixel-perfect contract (mandatory — gate G5).** Verified against `docs/position.avif`:
+
+| Element | Requirement |
+|---|---|
+| Page background | Soft gray (e.g., `#d9d9dc`). Full viewport height. |
+| Header | `<ChevronLeft size={28}>` button immediately followed by `<h1>` with text `${positionName} Position` (note the trailing word "Position"). No subtitle line. |
+| Column tile | Slightly lighter gray than the page (e.g., `#ececef`), rounded corners (~`0.75rem`), inner padding ~`1rem`. No white card / no shadow. |
+| Column header | Step name in a single `<h2>` plus the candidate count in a muted span. |
+| Candidate card | White, rounded `~0.5rem`, soft 1-px shadow. Shows the candidate full name on top and a row beneath of **exactly `round(averageScore)` green dots** (color `#009800`, sampled from `docs/position.avif`). Do NOT render 5 placeholder dots with some greyed out — only the filled green ones appear. If `averageScore` rounds to 0, render no row. **No** `App ID:` line. **No** numeric `N/5` badge. |
+| Card width | Fixed (~`16rem`) on desktop; full-width on mobile. |
+| Mobile (<768px) | Columns stack vertically, full-width. |
+| Reduced motion | All card transitions disabled under `prefers-reduced-motion: reduce`. |
+
 **Tests.**
 
-- Cypress E2E: list → click "Ver proceso" → kanban renders columns from `interviewFlow` → drag a candidate from column A to column B → optimistic move → assert PUT call → assert reload renders candidate in column B → mobile viewport renders columns vertically.
+- Cypress E2E: visit `/positions/${Cypress.env('positionId')}` directly (default `positionId = <seeded id>`, configurable via `CYPRESS_positionId=N` or `--env positionId=N`). The list page at `/positions` MUST NOT be used as the entry point — it renders hardcoded mock cards (ids 1–3) that do not exist in the seeded DB, so clicking "Ver proceso" from there lands on a position with no `interviewFlow`. Specs MUST: (a) cross-check the rendered columns and candidate cards against live `GET /positions/:id/interviewFlow` and `GET /positions/:id/candidates`; (b) assert `.score-dot` count per card equals `round(averageScore)`; (c) assert the back button by `aria-label` (no visible text); (d) exercise DnD via `pointerdown` → `pointermove` → `pointerup` on the card and the target column (the events `@dnd-kit`'s `PointerSensor` listens for — native HTML5 `drag` is NOT used) with `cy.intercept('PUT', '/candidates/*/stage').as('moveStage')` and a `cy.wait('@moveStage')` status check; (e) verify the mobile viewport (< 768px) yields `flex-direction: column` on `.kanban-board`.
 - Jest backend unit tests: only for endpoints implemented in the verify-then-decide branch.
 
 ---
@@ -471,8 +506,10 @@ When this prompt finishes executing, the repository must contain:
   - `frontend/src/pages/PositionPage.tsx` (lazy-loaded route), `frontend/src/components/Kanban/*`, `frontend/src/hooks/usePositionBoard.ts`, `frontend/src/services/positionService.ts`, `frontend/src/types/position.ts`.
   - Wired `Ver proceso` button in `frontend/src/components/Positions.tsx` and route in `frontend/src/App.{js,tsx}`.
 - Backend endpoints (only when verify-then-decide flags them as missing): repository, service, controller, route, Zod schema, Jest tests.
-- Cypress setup: `cypress.config.ts`, `cypress/e2e/position-kanban.cy.ts`, fixtures.
-- Jest backend tests covering new code at > 80 %.
+- Cypress setup: `cypress.config.ts` with `env: { positionId: <seeded id> }` (overridable via `CYPRESS_positionId=N` or `--env positionId=N`), **`cypress/support/e2e.ts`** (default supportFile — required to avoid "Your project does not contain a default supportFile" on `cypress run`), `cypress/support/commands.ts`, and `cypress/e2e/position-kanban.cy.ts` that visits `/positions/${Cypress.env('positionId')}` directly per §13.
+- Jest backend tests covering **new** code at > 80 %. In this codebase the three kanban endpoints (`GET /positions/:id/interviewFlow`, `GET /positions/:id/candidates`, `PUT /candidates/:id/stage`) already exist with passing tests under `backend/src/{application/services,presentation/controllers}/*.test.ts`, so the verify-then-decide branch (§13) is NOT triggered and no new backend tests are required for the kanban feature itself. If the branch *is* triggered on a future change, add controller + service tests for the new code path and keep coverage above 80% on the diff.
+- Seed script (`backend/seed-test-data.ts` or `backend/prisma/seed.ts`) MUST insert at least one `Interview` row per non-screening `Application` with a non-null `score` — otherwise the API will return `averageScore: 0` for every candidate and gate G4 fails. The seed must also create an `Employee` (or reuse an existing one) because `Interview.employeeId` is required.
+- **Idempotent backfill** at `backend/scripts/add-interviews.ts` for cases where Applications already exist without Interviews (typical after a partially-failed prior run). It MUST: query `Application.findMany({ include: { interviews: true, position: { include: { interviewFlow: { include: { interviewSteps: true } } } } } })`, skip rows where `interviews.length > 0`, reuse any existing `Recruiter` Employee (creating one only if none exists), and insert one Interview per prior-or-current step with deterministic scores. Run with `npx ts-node --transpile-only scripts/add-interviews.ts` (the project's installed `ts-node` crashes on the standard path with a `resolveTypeReferenceDirective` Debug Failure; `--transpile-only` bypasses it).
 - `docs/report.md` (per §18).
 - `PR.md` at repo root (per §17).
 
@@ -534,10 +571,10 @@ npx opsx view
 ```
 
 ## Testing Strategy & Results
-- Backend Jest coverage: <pct>%
-- Frontend Cypress: <pass/fail>
-- Lighthouse a11y: <score>
-- npm audit: <high+ findings>
+- Backend Jest coverage: `<pct>%`
+- Frontend Cypress: `<pass/fail>`
+- Lighthouse a11y: `<score>`
+- npm audit: `<high+ findings>`
 
 ## Security & Accessibility Audit
 - OWASP Top 10 walk-through (link to issues found and fixed)
@@ -597,11 +634,10 @@ Run in order; phases tagged `[parallel]` may execute concurrently with their coh
 8. Verify-then-decide on backend endpoints (§13). If missing, run Phase 4 (DDD/Hexagonal endpoint implementation) + Phase 5 (JSDoc) `[parallel]` for the backend track.
 9. Phase 15 — `/opsx:apply`: implement frontend kanban; Phase 6, 7, 10, 11, 12, 13 `[parallel]` where independent.
 10. Phase 9 — Cybersecurity (DOMPurify, Zod, headers, audits) `[parallel]` with Phase 11 a11y audit.
-11. Phase 15 — `/opsx:sync`: align specs with shipped code.
-12. Phase 15 — `/opsx:archive`: archive the change.
-13. Phase 16 — Generate `docs/report.md`.
-14. Render `PR.md` via `pr-md-writer`.
-15. Re-run `scripts/link-ai-tooling.sh` and assert idempotence (no diff).
+11. Phase 15 — `/opsx:archive`: archive the change; OpenSpec promotes the change's spec delta into `openspec/specs/<capability>/spec.md` (this is what `/opsx:sync` did in older versions; 1.3.x folds sync into archive).
+12. Phase 16 — Generate `docs/report.md`.
+13. Render `PR.md` via `pr-md-writer`.
+14. Re-run `scripts/link-ai-tooling.sh` and assert idempotence (no diff).
 
 ---
 
@@ -628,7 +664,14 @@ The run is complete when **all** of the following hold:
 | Failure | Recovery |
 |---|---|
 | OpenSpec install fails (network / version) | Fall back to manual scaffold matching §10 contents; record deviation in `PR.md`. |
-| `/opsx:*` commands not available in the IDE | Drive the lifecycle manually via the `openspec-analyst` agent + skills; same artifacts produced. |
+| `/opsx:*` commands not available in the IDE | Drive the lifecycle manually with the CLI: `openspec init --tools claude --force`, `openspec new change <name>`, edit `proposal.md`/`design.md`/`tasks.md` and `specs/<capability>/spec.md`, `openspec validate <name>`, `openspec archive <name> --yes`. Same artifacts produced. |
+| Cypress error: "Your project does not contain a default supportFile" | Create `frontend/cypress/support/e2e.ts` (default supportFile) and `frontend/cypress/support/commands.ts`. Do NOT set `supportFile: false` unless E2E intentionally has no shared setup. |
+| Cypress spec navigates via the `/positions` list and lands on a 404-ish kanban with no `interviewFlow` data | The list page renders hardcoded mock cards (ids 1, 2, 3) that do not exist in the seeded DB. The spec MUST visit `/positions/${Cypress.env('positionId')}` directly and read the seeded id from `cypress.config.ts` `env.positionId`. |
+| Kanban candidates all show `averageScore: 0` | The seed inserts `Application` rows but no `Interview` rows. Add `Interview` rows with scores (and an `Employee` for `employeeId`) before serving the API. Verify with `curl localhost:3010/positions/<id>/candidates`. |
+| `Object.keys(record)` returns strings, breaking strict-mode indexing into `Record<number, …>` | Wrap with `Number(stepId)` when assigning into `Record<number, Candidate[]>`; do not loosen tsconfig. |
+| Kanban DnD silently does nothing when a card is dropped on a column that already contains cards | The default `over.id` becomes `candidate-{appId}-{stepId}` (a sibling sortable), not `column-{stepId}`. Update `onDragEnd` to accept both shapes and use `closestCenter` collision detection — see §13 and Gate G8. |
+| All kanban cards show 0 / no green dots after the UI renders correctly | Applications exist in the DB but their related Interview rows do not — `averageScore = mean(interviews.score)` returns 0 for an empty `interviews` array. Run `backend/scripts/add-interviews.ts` to backfill (idempotent). See Gate G9. |
+| `ts-node` crashes with `Debug Failure. False expression: Non-string value passed to ts.resolveTypeReferenceDirective` | This repo's pinned `ts-node` + `typescript` combination has a known resolver mismatch. Re-run with `npx ts-node --transpile-only <file>`. Do not upgrade `typescript` globally unless the project pin allows it. |
 | Backend endpoints missing | Trigger the verify-then-decide branch (§13); finish backend track before frontend consumes endpoints. |
 | `@dnd-kit/core` keyboard support insufficient | Add explicit ARIA live region announcements for stage changes; document in `PR.md`. |
 | Symlinks unsupported (Windows w/o admin) | Provide `scripts/link-ai-tooling.cmd` using `mklink /D`; if disallowed, copy files and document the deviation. |

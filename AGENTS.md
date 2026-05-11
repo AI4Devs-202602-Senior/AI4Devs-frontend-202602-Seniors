@@ -87,11 +87,12 @@ repo-root/
 │   │   ├── chrome-devtools-mcp-setup/SKILL.md
 │   │   ├── pr-md-writer/SKILL.md
 │   │   └── report-md-writer/SKILL.md
-│   └── commands/                      # 10 slash entry points
-│       ├── opsx-propose.md
-│       ├── opsx-apply.md
-│       ├── opsx-sync.md
-│       ├── opsx-archive.md
+│   └── commands/                      # slash entry points
+│       ├── opsx/                       # OpenSpec-installed (canonical /opsx:*)
+│       │   ├── propose.md
+│       │   ├── apply.md
+│       │   ├── archive.md
+│       │   └── explore.md
 │       ├── audit-web-vitals.md
 │       ├── audit-a11y.md
 │       ├── audit-owasp.md

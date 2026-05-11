@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Badge } from 'react-bootstrap';
+import { Card } from 'react-bootstrap';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Candidate } from '../../types/position';
@@ -9,15 +9,15 @@ interface CandidateCardProps {
   stepId: number;
 }
 
+const MAX_SCORE = 5;
+
 /**
- * Draggable candidate card within a kanban column.
- * Shows candidate name and average score.
- * Supports keyboard and mouse drag-and-drop.
+ * Draggable candidate card for the kanban board.
+ * Renders the candidate's full name and their average score as
+ * N green circles (one per integer point of `averageScore`), matching
+ * docs/position.avif — no unfilled placeholder dots.
  */
-const CandidateCard: React.FC<CandidateCardProps> = ({
-  candidate,
-  stepId,
-}) => {
+const CandidateCard: React.FC<CandidateCardProps> = ({ candidate, stepId }) => {
   const {
     attributes,
     listeners,
@@ -29,32 +29,35 @@ const CandidateCard: React.FC<CandidateCardProps> = ({
     id: `candidate-${candidate.applicationId}-${stepId}`,
   });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const scoreColor = candidate.averageScore >= 4 ? 'success' : 'warning';
+  const score = Math.max(0, Math.min(MAX_SCORE, Math.round(candidate.averageScore)));
 
   return (
     <Card
       ref={setNodeRef}
       style={style}
-      className="candidate-card cursor-grab"
+      className="candidate-card"
       {...attributes}
       {...listeners}
     >
-      <Card.Body className="p-3">
-        <div className="d-flex justify-content-between align-items-start">
-          <div className="flex-grow-1">
-            <h6 className="mb-1">{candidate.fullName}</h6>
-            <small className="text-muted">App ID: {candidate.applicationId}</small>
+      <Card.Body className="candidate-card__body">
+        <h6 className="candidate-card__name">{candidate.fullName}</h6>
+        {score > 0 && (
+          <div
+            className="candidate-card__score"
+            role="img"
+            aria-label={`Average score ${score} out of ${MAX_SCORE}`}
+          >
+            {Array.from({ length: score }).map((_, i) => (
+              <span key={i} className="score-dot" aria-hidden="true" />
+            ))}
           </div>
-          <Badge bg={scoreColor} className="ms-2">
-            {candidate.averageScore}/5
-          </Badge>
-        </div>
+        )}
       </Card.Body>
     </Card>
   );

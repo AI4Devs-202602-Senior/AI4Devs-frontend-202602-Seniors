@@ -46,7 +46,7 @@ export const usePositionBoard = (positionId: number) => {
         // Normalize candidates by step
         const candidatesByStep: Record<number, Candidate[]> = {};
         Object.keys(columns).forEach((stepId) => {
-          candidatesByStep[stepId] = [];
+          candidatesByStep[Number(stepId)] = [];
         });
         candidatesData.forEach((candidate) => {
           if (candidatesByStep[candidate.currentInterviewStep]) {

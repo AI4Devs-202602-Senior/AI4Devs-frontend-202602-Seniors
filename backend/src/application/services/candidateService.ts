@@ -65,9 +65,9 @@ export const findCandidateById = async (id: number): Promise<Candidate | null> =
     }
 };
 
-export const updateCandidateStage = async (id: number, applicationIdNumber: number, currentInterviewStep: number) => {
+export const updateCandidateStage = async (applicationId: number, currentInterviewStep: number) => {
     try {
-        const application = await Application.findOneByPositionCandidateId(applicationIdNumber, id);
+        const application = await Application.findOne(applicationId);
         if (!application) {
             throw new Error('Application not found');
         }

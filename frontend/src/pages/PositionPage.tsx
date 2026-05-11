@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Container, Row, Col } from 'react-bootstrap';
+import { Container } from 'react-bootstrap';
+import { ChevronLeft } from 'react-bootstrap-icons';
 import { usePositionBoard } from '../hooks/usePositionBoard';
 import KanbanBoard from '../components/Kanban/KanbanBoard';
-import BackButton from '../components/Kanban/BackButton';
 import LoadingSkeleton from '../components/Kanban/LoadingSkeleton';
 import ErrorState from '../components/Kanban/ErrorState';
 import Toast from '../components/Kanban/Toast';
@@ -58,22 +58,23 @@ const PositionPage: React.FC = () => {
     return <ErrorState error={new Error('No board data available')} />;
   }
 
-  return (
-    <Container fluid className="position-page py-4">
-      <Row className="mb-4 align-items-center">
-        <Col xs="auto">
-          <BackButton onClick={() => navigate('/positions')} />
-        </Col>
-        <Col>
-          <h1 className="mb-0">{positionName || 'Position Details'}</h1>
-          <p className="text-muted">Manage candidates through interview stages</p>
-        </Col>
-      </Row>
+  const heading = positionName ? `${positionName} Position` : 'Position';
 
-      <KanbanBoard
-        board={board}
-        onMoveCandidate={handleMoveCandidate}
-      />
+  return (
+    <Container fluid className="position-page">
+      <header className="position-page__header">
+        <button
+          type="button"
+          className="position-page__back"
+          onClick={() => navigate('/positions')}
+          aria-label="Back to positions list"
+        >
+          <ChevronLeft size={28} aria-hidden="true" />
+        </button>
+        <h1 className="position-page__title">{heading}</h1>
+      </header>
+
+      <KanbanBoard board={board} onMoveCandidate={handleMoveCandidate} />
 
       {toastMessage && (
         <Toast
